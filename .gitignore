@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data folders (فقط برای آموزش)
+FAULT_DETECT/
+
+# Backups
+solar_backup.csv
+*.log
+
+# Test files
+test_api.py
+test_openmeteo.py
+test_forecast.py
+api check.py
+check_predict.py
