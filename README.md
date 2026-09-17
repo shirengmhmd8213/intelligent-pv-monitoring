@@ -53,8 +53,9 @@ The dashboard provides:
 - **Interactive charts** for solar irradiance and PV parameters
 - **Performance snapshots** and audit logs
 
-🔗 **Live Dashboard:** _[your Streamlit Cloud URL]_
+🔗 **Live Dashboard:** [intelligent-pv-monitoring.streamlit.app](https://intelligent-pv-monitoring-lnkzrzaqr6vurpjdfqxm7i.streamlit.app)
 
+> ⚠️ **Note:** The dashboard is hosted on Streamlit Cloud and may not be directly accessible from Iran without a VPN.
 ---
 
 ## ⚙️ Tech Stack
