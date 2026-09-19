@@ -255,11 +255,10 @@ def build_weather_bands(t_min, t_max, hourly_schedule, default_condition):
     return pd.DataFrame(merged)
 
 # =========================================================================================
-# 5. 3-DAY POWER FORECAST (Open-Meteo Live + predict.xlsx fallback) — Wh OUTPUT
+# 5. 3-DAY POWER FORECAST
 # =========================================================================================
 @st.cache_data(ttl=1800)
 def fetch_forecast_weather_from_openmeteo():
-    """گرفتن تابش و دما از Open-Meteo برای 7 روز آینده"""
     url = (
         "https://api.open-meteo.com/v1/forecast"
         "?latitude=35.6892&longitude=51.3890"
@@ -296,17 +295,14 @@ def fetch_forecast_weather_from_openmeteo():
 
 @st.cache_data(ttl=1800)
 def compute_3day_forecast():
-    """محاسبه‌ی پیش‌بینی توان برای ۳ روز آینده (خروجی: total_wh)"""
     try:
         model = AI_MODELS['forecast_model']
         if model is None:
             return None
 
-        # ۱. اول از Open-Meteo
         df_new = fetch_forecast_weather_from_openmeteo()
         data_source = "Open-Meteo Live"
 
-        # ۲. Fallback به predict.xlsx
         if df_new is None or df_new.empty:
             df_raw = AI_MODELS['forecast_data']
             if df_raw is None:
@@ -970,20 +966,36 @@ def start_mqtt_client(broker: str, port: int, topic: str, fallback_host: str):
                     if popped_ts:
                         solar_data['seen_timestamps'].discard(str(popped_ts))
 
-                # AI FAULT DETECTION
+                # ====================================================
+                # AI FAULT DETECTION (با دیباگ کامل)
+                # ====================================================
                 try:
+                    print(f"🔍 AI Check: loaded={AI_MODELS['loaded']}, c_watts={c_watts:.1f}, V={c_v:.2f}, I={c_i:.2f}")
+
                     if AI_MODELS['loaded'] and c_watts > 5.0:
                         feats = build_fault_features(
                             voltage=c_v, current=c_i / 1000.0,
                             power=c_pw, irradiance=c_watts,
                             temperature=c_temp
                         )
+                        print(f"📊 Features: {feats}")
+
                         X_row = pd.DataFrame([feats])[AI_MODELS['fault_features']]
+                        print(f"📊 X_row shape: {X_row.shape}")
+
                         pred_class = AI_MODELS['fault_model'].predict(X_row)[0]
-                        proba = AI_MODELS['fault_model'].predict_proba(X_row)[0].max()
+                        proba_arr = AI_MODELS['fault_model'].predict_proba(X_row)[0]
+                        proba = proba_arr.max()
+
+                        print(f"✅ Prediction: {pred_class} ({proba*100:.1f}%)")
+                        print(f"📊 Buffer size before: {len(st.session_state['fault_vote_buffer'])}")
+
                         st.session_state['fault_vote_buffer'].append(pred_class)
                         votes = Counter(st.session_state['fault_vote_buffer'])
                         final_class, vote_count = votes.most_common(1)[0]
+
+                        print(f"📊 Votes: {dict(votes)} → Final: {final_class}")
+
                         solar_data['ai_fault_history'].append({
                             'timestamp': cycle_iso,
                             'class': final_class,
@@ -991,8 +1003,16 @@ def start_mqtt_client(broker: str, port: int, topic: str, fallback_host: str):
                             'votes': vote_count,
                             'total': len(st.session_state['fault_vote_buffer'])
                         })
+                    else:
+                        if not AI_MODELS['loaded']:
+                            print(f"❌ AI_MODELS not loaded - skipping")
+                        elif c_watts <= 5.0:
+                            print(f"⏸️ AI paused: c_watts={c_watts:.1f} (need > 5.0)")
                 except Exception as e_ai:
-                    print(f"AI fault detection error: {e_ai}")
+                    print(f"❌ AI Error: {e_ai}")
+                    import traceback
+                    print(traceback.format_exc())
+                    add_event("warning", f"AI Error: {str(e_ai)[:100]}")
 
                 if solar_data['logging_active']:
                     is_day = is_daytime(cycle_dt, c_watts, c_lux)
@@ -1529,7 +1549,6 @@ with col_center:
 # ZONE 3 (RIGHT)
 # -----------------------------------------------------------------------------------------
 with col_right:
-    # AI Fault Status
     if current_fault_class:
         info = FAULT_MESSAGES.get(current_fault_class, {'msg': 'Unknown', 'color': '#64748b', 'level': 'info'})
         class_short = current_fault_class.replace('PV_', '').replace('_dataset', '')
@@ -1560,7 +1579,6 @@ with col_right:
         </div>
         """, unsafe_allow_html=True)
 
-    # 3-Day Forecast (Wh display)
     forecast_df = compute_3day_forecast()
     st.markdown(f"""
     <div class="forecast-card">
@@ -1609,7 +1627,6 @@ with col_right:
         st.markdown('<div style="font-size: 11.5px; color: #94a3b8; padding: 8px 0; text-align: center;">Forecast data unavailable.</div>', unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # System Status
     st.markdown(f"""
     <div class="dashboard-card">
         <div class="card-title">{get_icon('shield-check', size=16, color='#0284c7')} SYSTEM STATUS</div>
@@ -1636,7 +1653,6 @@ with col_right:
     </div>
     """, unsafe_allow_html=True)
 
-    # Solar Intensity Gauge
     irr_cur = cur_watts
     gauge_pct = min(1.0, max(0.0, irr_cur / 1000.0))
     angle = -90 + (gauge_pct * 180)
@@ -1663,7 +1679,6 @@ with col_right:
     </div>
     """, unsafe_allow_html=True)
 
-    # Recent Events
     with data_lock:
         ev_copy = list(solar_data['events'])
     st.markdown(f"""
